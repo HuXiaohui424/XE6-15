@@ -1,8 +1,7 @@
 <div align="center">
 
 <h1 align="center">
-  <img src="./assets/logo.png" alt="VoiceLife 声活 Logo" width="120" valign="middle" />
-  VoiceLife 声活
+  <img src="./assets/logo.svg" alt="VoiceLife 声活 Logo" width="350"  valign="middle" />
 </h1>
 
 <p><strong>面向本地日程、提醒、存储、语音和消息渠道的设备端系统</strong></p>
@@ -99,7 +98,7 @@ VoiceLife 使用 ESP-IDF 组件化模块单体。核心代码使用 C++，外部
 | `voicelife_linx_esp` | ESP32-S3 WSS/TLS Transport 和分片重组 | contracts、linx |
 | `voicelife_audio_esp` | ESP32-S3 音频 Profile、探针和设备端 Port | contracts、voice |
 | `voicelife_board_esp` | ESP-SparkBot 板级 Profile、能力矩阵、共享电源仲裁和身份探针 | contracts |
-| `voicelife_mcp` | 工具 Schema、注册中心、调用路由和测试工具适配 | contracts、schedule |
+| `voicelife_mcp` | 工具 Schema、注册中心和调用路由 | contracts |
 | `voicelife_runtime` | 唯一组装入口，按生命周期启动和回滚基础设施 | contracts、mcp、voice、linx、storage adapters |
 
 依赖方向只有一条：适配器依赖用例，用例依赖领域，领域不认识 ESP-IDF、HTTP 或平台 SDK。CI 会运行 `scripts/check_architecture.sh` 检查组件清单、命名空间和依赖图。
