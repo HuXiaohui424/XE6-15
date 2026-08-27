@@ -152,7 +152,7 @@ inline ToolOutputValue RepeatOutput(const schedule::ScheduleRule& rule) {
 
 inline ToolOutputValue ScheduleOutput(const schedule::Schedule& value, const schedule::ScheduleRule* rule = nullptr) {
     return ToolOutputValue::Object({
-        MakeToolOutput("id", ToolOutputValue::Integer(value.id)),
+        MakeToolOutput("schedule_id", ToolOutputValue::Integer(value.id)),
         MakeToolOutput("event", ToolOutputValue::String(value.event)),
         MakeToolOutput("status", ToolOutputValue::String(StatusName(value.status))),
         MakeToolOutput("start_time", value.start_time.has_value()
@@ -214,7 +214,7 @@ inline ToolOutputArray FutureOccurrencesOutput(const schedule::ScheduleRule& rul
 
 inline ToolOutputValue RuleOutput(const schedule::ScheduleRule& rule) {
     return ToolOutputValue::Object({
-        MakeToolOutput("id", ToolOutputValue::Integer(rule.id)),
+        MakeToolOutput("rule_id", ToolOutputValue::Integer(rule.id)),
         MakeToolOutput("event", ToolOutputValue::String(rule.event)),
         MakeToolOutput("status", ToolOutputValue::String(StatusName(rule.status))),
         MakeToolOutput("freq_type", ToolOutputValue::String(FrequencyName(rule.freq_type))),
@@ -242,7 +242,7 @@ inline ToolOutputValue RuleOutput(const schedule::ScheduleRule& rule) {
 
 inline ToolOutputValue ExceptionOutput(const schedule::ScheduleException& exception) {
     return ToolOutputValue::Object({
-        MakeToolOutput("id", ToolOutputValue::Integer(exception.id)),
+        MakeToolOutput("exception_id", ToolOutputValue::Integer(exception.id)),
         MakeToolOutput("rule_id", ToolOutputValue::Integer(exception.rule_id)),
         MakeToolOutput("original_start_time", ToolOutputValue::String(FormatDateTime(exception.original_start_time))),
         MakeToolOutput("type",
@@ -343,7 +343,7 @@ inline ToolOutputValue BeforeOutput(const std::optional<std::string>& before) {
 
 inline ToolOutputValue OperationOutput(const schedule::OperationRecord& operation) {
     return ToolOutputValue::Object({
-        MakeToolOutput("id", ToolOutputValue::Integer(operation.id)),
+        MakeToolOutput("operation_id", ToolOutputValue::Integer(operation.id)),
         MakeToolOutput("entity_type", ToolOutputValue::String(EntityTypeName(operation.entity_type))),
         MakeToolOutput("type", ToolOutputValue::String(OperationTypeName(operation.type))),
         MakeToolOutput("entity_id", ToolOutputValue::Integer(operation.entity_id)),

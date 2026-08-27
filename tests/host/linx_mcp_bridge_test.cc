@@ -116,6 +116,18 @@ int main() {
     Check(successful_outcome.success && successful_outcome.summary == "日程已创建",
           "成功 MCP 机器结果不得进入用户可见会话/屏幕语义");
 
+    const auto query_call = voicelife::runtime::HandleLinxMcpPayload(
+        R"({"jsonrpc":"2.0","method":"tools/call","params":{"name":"schedule.query"},"id":4})", server);
+    Check(query_call.ok(), "tools/call schedule.query 应成功回传结果");
+    const auto& queried = ParseMcpEnvelope(*query_call.value);
+    Check(queried.Get("result")->Get("content")->array.size() == 1 &&
+              queried.Get("result")->Get("content")->array[0].Get("type")->string == "text",
+          "schedule.query 必须以 MCP text content 回传");
+    const std::string query_text = queried.Get("result")->Get("content")->array[0].Get("text")->string;
+    Check(query_text.find("\"one_time_schedules\"") != std::string::npos &&
+              query_text.find("\"schedule_id\"") != std::string::npos,
+          "schedule.query 必须向模型回传含 schedule_id 的结构化 JSON，而不是人话摘要");
+
     const auto binding_response = voicelife::Result<std::string>::Success(
         R"({"type":"mcp","payload":{"jsonrpc":"2.0","id":6,"result":{"content":[],"isError":false}}})");
     const auto binding_outcome = voicelife::runtime::InspectLinxMcpToolOutcome(

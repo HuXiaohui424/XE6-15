@@ -219,9 +219,9 @@ Result<ToolValue> ToolValueFromJson(const JsonValue& value) {
 }
 
 /**
- * @brief 获取工具调用面向用户的文本结果。
+ * @brief 获取工具调用回传给模型的文本结果。
  * @param result 已成功执行的工具结果。
- * @return 工具提供的精确文本，或由结构化输出序列化生成的 JSON 文本。
+ * @return 结构化输出序列化生成的 JSON 文本；结构化输出为空时回退到 text_output 或通用提示。
  */
 std::string NonEmptyMessage(std::string message, bool success) {
     if (!message.empty()) return message;
@@ -229,15 +229,11 @@ std::string NonEmptyMessage(std::string message, bool success) {
 }
 
 std::string ResolveToolResultText(const ToolResult& result) {
-    if (result.text_output.has_value()) return NonEmptyMessage(*result.text_output, result.status.ok());
+    // 结构化输出优先回传给模型：模型需要完整字段（例如 schedule_id / rule_id）
+    // 才能对查询结果继续调用 update/delete 等工具，不能因存在 text_output 就丢弃结构化数据。
     const std::string serialized = mcp::SerializeToolOutputValue(result.output);
     if (!serialized.empty() && serialized != "{}") return serialized;
-    if (result.output.IsObject() && result.output.object != nullptr) {
-        for (const auto& [key, value] : *result.output.object) {
-            if (key == "message" && value != nullptr && value->IsString())
-                return NonEmptyMessage(value->string, result.status.ok());
-        }
-    }
+    if (result.text_output.has_value()) return NonEmptyMessage(*result.text_output, result.status.ok());
     return NonEmptyMessage(serialized, result.status.ok());
 }
 

@@ -177,7 +177,7 @@ void CheckProtocolSerializationBranches() {
                                       Property::Optional("metadata", PropertyType::kObject)}),
                         [](const PropertyList& properties) {
                             (void)properties;
-                            ToolResult result = ToolResult::Success(ToolOutputValue::String("ignored"));
+                            ToolResult result = ToolResult::Success(ToolOutputValue::Object({}));
                             result.text_output = "quote:\" slash:\\ control:\b\f\n\r\t\x01";
                             return result;
                         })
