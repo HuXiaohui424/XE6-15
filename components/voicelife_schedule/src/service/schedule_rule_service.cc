@@ -100,22 +100,28 @@ CreateScheduleRuleResult ScheduleRuleService::create_schedule_rule(const CreateS
     }
 
     // 由仓储在事务内同时创建规则和首条实例，保证规则与实例一致性。
-    const Result<ScheduleRule> created = rule_repository_.CreateWithFirstInstance(rule, first_instance);
+    const Result<CreatedScheduleRule> created = rule_repository_.CreateWithFirstInstance(rule, first_instance);
     if (!created.ok()) {
         return FailedCreateScheduleRuleResult(created.status, std::move(conflicts));
     }
 
-    // 返回数据：首条实例补上仓储生成的 rule_id 后再随规则一起返回。
-    std::vector<Schedule> schedules;
-    if (first_instance.has_value()) {
-        first_instance->rule_id = created.value->id;
-        schedules.push_back(*first_instance);
+    if (!created.value.has_value()) {
+        return FailedCreateScheduleRuleResult(
+            Status::Error(ErrorCode::kInternal, "周期日程创建成功但仓储未返回保存结果"), std::move(conflicts));
     }
+    const CreatedScheduleRule& saved = *created.value;
+    if (first_instance.has_value() && !saved.first_schedule.has_value()) {
+        return FailedCreateScheduleRuleResult(
+            Status::Error(ErrorCode::kInternal, "周期日程创建成功但仓储未返回首条实例"), std::move(conflicts));
+    }
+    const std::string message = saved.first_schedule.has_value()
+                                    ? "周期日程创建成功，首条实例已物化"
+                                    : "周期日程创建成功，没有可物化的首条实例";
     return {.status = Status::Ok(),
-            .rule = created.value,
-            .schedules = std::move(schedules),
+            .rule = saved.rule,
+            .first_schedule = saved.first_schedule,
             .conflicts = std::move(conflicts),
-            .error = {}};
+            .message = message};
 }
 
 QueryScheduleRulesResult ScheduleRuleService::query_schedule_rules(const QueryScheduleRulesCommand& command) const {

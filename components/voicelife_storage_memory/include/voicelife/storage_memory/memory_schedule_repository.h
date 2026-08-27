@@ -83,8 +83,8 @@ class MemoryScheduleRuleRepository final : public schedule::ScheduleRuleReposito
     /** @brief 读取周期规则。 @param id 规则标识。 @return 规则或错误。 */
     [[nodiscard]] Result<schedule::ScheduleRule> FindById(schedule::ScheduleRuleId id) const override;
     /** @brief 原子创建规则和首条实例。 @param rule 待保存规则。 @param first_instance 首条实例。 @return
-     * 保存后的规则或错误。 */
-    Result<schedule::ScheduleRule> CreateWithFirstInstance(
+     * 保存后的真实规则及首条实例（含生成的 ID）。 */
+    Result<schedule::CreatedScheduleRule> CreateWithFirstInstance(
         const schedule::ScheduleRule& rule, const std::optional<schedule::Schedule>& first_instance) override;
     /** @brief 原子更新规则并重建未来实例。 @param rule 更新后的规则。 @param first_instance 新首条实例。 @return
      * 更新后的规则或错误。 */

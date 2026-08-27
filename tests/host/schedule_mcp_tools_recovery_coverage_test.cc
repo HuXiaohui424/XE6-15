@@ -74,11 +74,12 @@ class FailingRuleRepository final : public voicelife::schedule::ScheduleRuleRepo
         return voicelife::Result<ScheduleRule>::Failure(ErrorCode::kUnavailable, "规则仓储暂不可用");
     }
 
-    voicelife::Result<ScheduleRule> CreateWithFirstInstance(const ScheduleRule& rule,
+    voicelife::Result<voicelife::schedule::CreatedScheduleRule> CreateWithFirstInstance(const ScheduleRule& rule,
                                                             const std::optional<Schedule>& first_instance) override {
         (void)rule;
         (void)first_instance;
-        return voicelife::Result<ScheduleRule>::Failure(ErrorCode::kUnavailable, "规则仓储暂不可用");
+        return voicelife::Result<voicelife::schedule::CreatedScheduleRule>::Failure(
+            ErrorCode::kUnavailable, "规则仓储暂不可用");
     }
 
     voicelife::Result<ScheduleRule> UpdateAndRebuild(const ScheduleRule& rule,

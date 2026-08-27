@@ -158,7 +158,7 @@ int main() {
                                                   .end_date = std::nullopt,
                                                   .occurrence_count = std::nullopt,
                                                   .ignore_conflict = false});
-    Check(rule.status.ok() && rule.rule.has_value() && rule.schedules.size() == 1,
+    Check(rule.status.ok() && rule.rule.has_value() && rule.first_schedule.has_value(),
           "内存存储必须原子创建规则和首条实例");
     ScheduleRule direct_rule;
     direct_rule.event = "直接规则";
@@ -177,7 +177,8 @@ int main() {
     ScheduleRule no_instance_rule;
     no_instance_rule.event = "无首条实例规则";
     const auto no_instance_created = rule_repository.CreateWithFirstInstance(no_instance_rule, std::nullopt);
-    Check(no_instance_created.ok() && no_instance_created.value->id > 0, "原子创建必须支持没有下一实例的有效规则");
+    Check(no_instance_created.ok() && no_instance_created.value->rule.id > 0,
+          "原子创建必须支持没有下一实例的有效规则");
     Check(rule_repository.UpdateAndRebuild(*inserted_rule.value, std::nullopt).ok(),
           "规则重建必须支持暂时没有下一实例");
 

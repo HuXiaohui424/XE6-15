@@ -350,7 +350,7 @@ class Runtime final {
             // MCP worker 只产生绑定结果；轮询与 OLED/TTS 均由各自受控任务处理。
             ESP_LOGI(
                 kTag,
-                "MCP_TOOLS_READY count=8 names=schedule.create,schedule.query,schedule.update,schedule.delete,"
+                "MCP_TOOLS_READY count=15 names=schedule.create,schedule.create_rule,schedule.query,schedule.update,schedule.update_occurrence,schedule.update_rule,schedule.delete,schedule.delete_rule,schedule.skip_occurrence,"
                 "schedule.operation_query,schedule.reminder_acknowledge,schedule.reminder_snooze,im.binding.start");
         }
         const Status reminder_status = schedule_reminder_service_->Start();

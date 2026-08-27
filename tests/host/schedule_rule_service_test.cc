@@ -221,21 +221,31 @@ class FakeRuleRepository final : public voicelife::schedule::ScheduleRuleReposit
      * @param first_instance 可空首条实例。
      * @return 保存后的规则。
      */
-    voicelife::Result<ScheduleRule> CreateWithFirstInstance(const ScheduleRule& rule,
-                                                            const std::optional<Schedule>& first_instance) override {
+    voicelife::Result<voicelife::schedule::CreatedScheduleRule> CreateWithFirstInstance(const ScheduleRule& rule,
+                                                                                       const std::optional<Schedule>& first_instance) override {
         if (fail_create_.has_value()) {
             voicelife::Status failure = std::move(*fail_create_);
             fail_create_.reset();
-            return voicelife::Result<ScheduleRule>::Failure(failure.code, failure.message);
+            return voicelife::Result<voicelife::schedule::CreatedScheduleRule>::Failure(failure.code, failure.message);
         }
         const auto created = Insert(rule);
-        if (!created.ok()) return created;
+        if (!created.ok()) {
+            return voicelife::Result<voicelife::schedule::CreatedScheduleRule>::Failure(created.status.code,
+                                                                                           created.status.message);
+        }
+        std::optional<Schedule> saved_first;
         if (first_instance.has_value()) {
             Schedule instance = *first_instance;
             instance.rule_id = created.value->id;
-            (void)schedules_.Insert(instance);
+            const auto saved = schedules_.Insert(instance);
+            if (!saved.ok()) {
+                return voicelife::Result<voicelife::schedule::CreatedScheduleRule>::Failure(saved.status.code,
+                                                                                               saved.status.message);
+            }
+            saved_first = *saved.value;
         }
-        return created;
+        return voicelife::Result<voicelife::schedule::CreatedScheduleRule>::Success(
+            {.rule = *created.value, .first_schedule = std::move(saved_first)});
     }
 
     /**

@@ -8,6 +8,12 @@
 
 namespace voicelife::schedule {
 
+/// 原子创建周期规则及首条已物化实例后的真实持久化结果。
+struct CreatedScheduleRule {
+    ScheduleRule rule;
+    std::optional<Schedule> first_schedule;
+};
+
 /**
  * @brief 定义周期规则所需的持久化能力。
  *
@@ -39,8 +45,8 @@ class ScheduleRuleRepository {
      * @param first_instance 待物化的首条实例；无下一发生时间时为空。
      * @return 保存后的规则。
      */
-    virtual Result<ScheduleRule> CreateWithFirstInstance(const ScheduleRule& rule,
-                                                         const std::optional<Schedule>& first_instance) = 0;
+    virtual Result<CreatedScheduleRule> CreateWithFirstInstance(const ScheduleRule& rule,
+                                                                 const std::optional<Schedule>& first_instance) = 0;
 
     /**
      * @brief 在同一事务中更新规则、删除未发生的未来实例和例外，并物化新规则的首条实例。

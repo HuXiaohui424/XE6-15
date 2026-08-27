@@ -10,13 +10,16 @@
 namespace voicelife::storage_memory {
 namespace {
 
+using schedule::CreatedScheduleRule;
 using schedule::DateTime;
 using schedule::OperationRecord;
 using schedule::QueryOperationCommand;
 using schedule::QueryScheduleCommand;
 using schedule::Schedule;
 using schedule::ScheduleException;
+using schedule::ScheduleId;
 using schedule::ScheduleRule;
+using schedule::ScheduleRuleId;
 using schedule::ScheduleStatus;
 using schedule::ScheduleStatusFilter;
 
@@ -248,21 +251,33 @@ Result<ScheduleRule> MemoryScheduleRuleRepository::FindById(schedule::ScheduleRu
     return Result<ScheduleRule>::Success(*found);
 }
 
-Result<ScheduleRule> MemoryScheduleRuleRepository::CreateWithFirstInstance(
+Result<CreatedScheduleRule> MemoryScheduleRuleRepository::CreateWithFirstInstance(
     const ScheduleRule& rule, const std::optional<Schedule>& first_instance) {
     std::lock_guard<std::mutex> lock(repository_.mutex_);
     if (rule.event.empty() || (first_instance.has_value() && first_instance->event.empty())) {
-        return Result<ScheduleRule>::Failure(ErrorCode::kInvalidArgument, "规则或首条日程名称不能为空");
+        return Result<CreatedScheduleRule>::Failure(ErrorCode::kInvalidArgument, "规则或首条日程名称不能为空");
     }
+    const std::size_t rules_size = repository_.rules_.size();
+    const ScheduleRuleId next_rule_id = repository_.next_rule_id_;
+    const ScheduleId next_schedule_id = repository_.next_schedule_id_;
     const Result<ScheduleRule> created = InsertRuleLocked(rule);
-    if (!created.ok()) return created;
+    if (!created.ok()) return Result<CreatedScheduleRule>::Failure(created.status.code, created.status.message);
+
+    std::optional<Schedule> inserted_first;
     if (first_instance.has_value()) {
         Schedule instance = *first_instance;
         instance.rule_id = created.value->id;
         const Result<Schedule> inserted = repository_.InsertScheduleLocked(instance);
-        if (!inserted.ok()) return Result<ScheduleRule>::Failure(inserted.status.code, inserted.status.message);
+        if (!inserted.ok()) {
+            repository_.rules_.resize(rules_size);
+            repository_.next_rule_id_ = next_rule_id;
+            repository_.next_schedule_id_ = next_schedule_id;
+            return Result<CreatedScheduleRule>::Failure(inserted.status.code, inserted.status.message);
+        }
+        inserted_first = *inserted.value;
     }
-    return created;
+    return Result<CreatedScheduleRule>::Success(
+        CreatedScheduleRule{.rule = *created.value, .first_schedule = std::move(inserted_first)});
 }
 
 Result<ScheduleRule> MemoryScheduleRuleRepository::UpdateAndRebuild(const ScheduleRule& rule,

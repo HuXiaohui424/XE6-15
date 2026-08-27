@@ -6,23 +6,27 @@
 namespace voicelife::schedule {
 namespace {
 
-std::string ErrorFrom(const Status& status) { return status.message; }
+std::string ErrorFrom(const Status& status) {
+    return status.message.empty() ? "周期日程操作失败" : status.message;
+}
 
 }  // namespace
 
 CreateScheduleRuleResult FailedCreateScheduleRuleResult(Status status, std::vector<Schedule> conflicts) {
-    const std::string error = ErrorFrom(status);
+    const std::string message = ErrorFrom(status);
+    if (status.message.empty()) status.message = message;
     return {
         .status = std::move(status),
         .rule = std::nullopt,
-        .schedules = {},
+        .first_schedule = std::nullopt,
         .conflicts = std::move(conflicts),
-        .error = error,
+        .message = message,
     };
 }
 
 QueryScheduleRulesResult FailedQueryScheduleRulesResult(Status status) {
     const std::string error = ErrorFrom(status);
+    if (status.message.empty()) status.message = error;
     return {
         .status = std::move(status),
         .rules = {},
@@ -33,6 +37,7 @@ QueryScheduleRulesResult FailedQueryScheduleRulesResult(Status status) {
 
 UpdateScheduleRuleResult FailedUpdateScheduleRuleResult(Status status, std::vector<Schedule> conflicts) {
     const std::string error = ErrorFrom(status);
+    if (status.message.empty()) status.message = error;
     return {
         .status = std::move(status),
         .rule = std::nullopt,
@@ -44,6 +49,7 @@ UpdateScheduleRuleResult FailedUpdateScheduleRuleResult(Status status, std::vect
 
 CancelScheduleRuleResult FailedCancelScheduleRuleResult(Status status, int64_t cancelled_count) {
     const std::string error = ErrorFrom(status);
+    if (status.message.empty()) status.message = error;
     return {
         .status = std::move(status),
         .rule = std::nullopt,
@@ -54,6 +60,7 @@ CancelScheduleRuleResult FailedCancelScheduleRuleResult(Status status, int64_t c
 
 UpdateScheduleOccurrenceResult FailedUpdateScheduleOccurrenceResult(Status status) {
     const std::string error = ErrorFrom(status);
+    if (status.message.empty()) status.message = error;
     return {
         .status = std::move(status),
         .schedule = std::nullopt,
@@ -65,6 +72,7 @@ UpdateScheduleOccurrenceResult FailedUpdateScheduleOccurrenceResult(Status statu
 
 SkipScheduleOccurrenceResult FailedSkipScheduleOccurrenceResult(Status status) {
     const std::string error = ErrorFrom(status);
+    if (status.message.empty()) status.message = error;
     return {
         .status = std::move(status),
         .schedule = std::nullopt,
@@ -75,6 +83,7 @@ SkipScheduleOccurrenceResult FailedSkipScheduleOccurrenceResult(Status status) {
 
 GenerateNextScheduleInstanceResult FailedGenerateNextScheduleInstanceResult(Status status) {
     const std::string error = ErrorFrom(status);
+    if (status.message.empty()) status.message = error;
     return {
         .status = std::move(status),
         .schedule = std::nullopt,

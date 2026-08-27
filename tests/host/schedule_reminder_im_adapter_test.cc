@@ -101,7 +101,7 @@ class Rules final : public voicelife::schedule::ScheduleRuleRepository {
         return Result<std::vector<ScheduleRule>>::Success({});
     }
     Result<ScheduleRule> FindById(ScheduleRuleId) const override { std::abort(); }
-    Result<ScheduleRule> CreateWithFirstInstance(const ScheduleRule&, const std::optional<Schedule>&) override {
+    Result<schedule::CreatedScheduleRule> CreateWithFirstInstance(const ScheduleRule&, const std::optional<Schedule>&) override {
         std::abort();
     }
     Result<ScheduleRule> UpdateAndRebuild(const ScheduleRule&, const std::optional<Schedule>&) override {

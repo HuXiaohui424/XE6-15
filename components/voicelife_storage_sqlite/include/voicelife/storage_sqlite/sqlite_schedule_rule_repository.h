@@ -37,8 +37,8 @@ class SqliteScheduleRuleRepository final : public schedule::ScheduleRuleReposito
     /** @brief 按标识读取一条规则。 @param id 规则标识。 @return 规则或未找到错误。 */
     [[nodiscard]] Result<schedule::ScheduleRule> FindById(schedule::ScheduleRuleId id) const override;
     /** @brief 在同一事务中创建规则并物化首条实例。 @param rule 待创建规则。 @param first_instance 首条实例。 @return
-     * 保存后的规则。 */
-    Result<schedule::ScheduleRule> CreateWithFirstInstance(
+     * 保存后的真实规则及首条实例（含数据库生成的 ID）。 */
+    Result<schedule::CreatedScheduleRule> CreateWithFirstInstance(
         const schedule::ScheduleRule& rule, const std::optional<schedule::Schedule>& first_instance) override;
     /** @brief 在同一事务中更新规则并重建未来实例。 @param rule 更新后的规则。 @param first_instance 新首条实例。
      * @return 保存后的规则。 */

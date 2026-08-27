@@ -165,17 +165,26 @@ class FakeRuleRepository final : public voicelife::schedule::ScheduleRuleReposit
     }
 
     /** @brief 创建规则和首条实例。 @param rule 规则。 @param first_instance 首条实例。 @return 创建后的规则。 */
-    voicelife::Result<ScheduleRule> CreateWithFirstInstance(const ScheduleRule& rule,
-                                                            const std::optional<Schedule>& first_instance) override {
+    voicelife::Result<voicelife::schedule::CreatedScheduleRule> CreateWithFirstInstance(const ScheduleRule& rule,
+                                                                                       const std::optional<Schedule>& first_instance) override {
         const auto created = Insert(rule);
-        if (!created.ok()) return created;
+        if (!created.ok()) {
+            return voicelife::Result<voicelife::schedule::CreatedScheduleRule>::Failure(created.status.code,
+                                                                                           created.status.message);
+        }
+        std::optional<Schedule> saved_first;
         if (first_instance.has_value()) {
             Schedule instance = *first_instance;
             instance.rule_id = created.value->id;
             const auto saved = schedules_.Insert(instance);
-            if (!saved.ok()) return voicelife::Result<ScheduleRule>::Failure(saved.status.code, saved.status.message);
+            if (!saved.ok()) {
+                return voicelife::Result<voicelife::schedule::CreatedScheduleRule>::Failure(saved.status.code,
+                                                                                               saved.status.message);
+            }
+            saved_first = *saved.value;
         }
-        return created;
+        return voicelife::Result<voicelife::schedule::CreatedScheduleRule>::Success(
+            {.rule = *created.value, .first_schedule = std::move(saved_first)});
     }
 
     /** @brief 更新规则并重建实例。 @param rule 规则。 @param first_instance 首条实例。 @return 更新后的规则。 */

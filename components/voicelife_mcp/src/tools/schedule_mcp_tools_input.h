@@ -12,7 +12,7 @@
 
 namespace voicelife::mcp::schedule_tool_input {
 
-/** @brief 解析 repeat 对象后的周期规则字段。 */
+/** @brief 解析后的扁平周期规则字段。 */
 struct ParsedRepeat {
     std::optional<schedule::Frequency> freq_type;
     std::optional<schedule::LocalTime> start_time;
@@ -27,47 +27,41 @@ struct ParsedRepeat {
     std::optional<int32_t> occurrence_count;
     std::string error;
 
-    /** @brief 判断解析是否成功。 @return 无错误时返回 true。 */
     [[nodiscard]] bool ok() const { return error.empty(); }
 };
 
-/**
- * @brief 解析 repeat 参数对象。
- * @param repeat 可选的 repeat 对象。
- * @param require_anchor 是否要求创建周期规则时必须包含 freq_type、start_date 和 start_time。
- * @return 解析后的周期字段或错误。
- */
+/** @brief 兼容旧调用方的 repeat 解析；新公开工具不再声明 repeat 对象。 */
 ParsedRepeat ParseRepeat(const std::optional<JsonValue>& repeat, bool require_anchor);
 
-/**
- * @brief 从 MCP 参数和 repeat 字段构造创建周期规则命令。
- * @param properties MCP 调用参数。
- * @param repeat 解析后的 repeat 字段。
- * @return 创建周期规则命令。
- */
+/** @brief 从扁平工具参数解析周期规则字段。 */
+ParsedRepeat ParseRuleProperties(const PropertyList& properties, bool require_anchor);
+
+/** @brief 从周期创建工具参数构造创建规则命令。 */
 schedule::CreateScheduleRuleCommand CreateRuleCommand(const PropertyList& properties, const ParsedRepeat& repeat);
 
-/**
- * @brief 从 MCP 参数和 repeat 字段构造更新周期规则命令。
- * @param properties MCP 调用参数。
- * @param repeat 解析后的 repeat 字段。
- * @return 更新周期规则命令。
- */
-schedule::UpdateScheduleRuleCommand UpdateRuleCommand(const PropertyList& properties, const ParsedRepeat& repeat);
+/** @brief 从周期规则修改工具参数构造更新规则命令。 */
+schedule::UpdateScheduleRuleCommand UpdateRuleCommand(const PropertyList& properties,
+                                                       const ParsedRepeat& repeat);
 
-/** @brief 创建 schedule.create 工具参数定义。 @return 参数定义。 */
+/** @brief 创建一次性日程工具参数定义。 */
 PropertyList CreateProperties();
-
-/** @brief 创建 schedule.query 工具参数定义。 @return 参数定义。 */
+/** @brief 创建周期日程工具参数定义；周期字段全部扁平化。 */
+PropertyList CreateRuleProperties();
+/** @brief 创建统一查询工具参数定义。 */
 PropertyList QueryProperties();
-
-/** @brief 创建 schedule.update 工具参数定义。 @return 参数定义。 */
+/** @brief 创建一次性或已物化实例修改工具参数定义。 */
 PropertyList UpdateProperties();
-
-/** @brief 创建 schedule.delete 工具参数定义。 @return 参数定义。 */
+/** @brief 创建未来 occurrence 修改工具参数定义。 */
+PropertyList UpdateOccurrenceProperties();
+/** @brief 创建整条周期规则修改工具参数定义。 */
+PropertyList UpdateRuleProperties();
+/** @brief 创建一次性或已物化实例取消工具参数定义。 */
 PropertyList DeleteProperties();
-
-/** @brief 创建 schedule.operation_query 工具参数定义。 @return 参数定义。 */
+/** @brief 创建整条周期规则取消工具参数定义。 */
+PropertyList DeleteRuleProperties();
+/** @brief 创建未来 occurrence 跳过工具参数定义。 */
+PropertyList SkipOccurrenceProperties();
+/** @brief 创建操作记录查询工具参数定义。 */
 PropertyList OperationQueryProperties();
 
 }  // namespace voicelife::mcp::schedule_tool_input

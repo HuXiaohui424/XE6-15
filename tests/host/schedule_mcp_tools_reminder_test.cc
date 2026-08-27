@@ -166,17 +166,24 @@ class FakeRuleRepository final : public voicelife::schedule::ScheduleRuleReposit
         return Result<ScheduleRule>::Failure(ErrorCode::kNotFound, "规则不存在");
     }
 
-    Result<ScheduleRule> CreateWithFirstInstance(const ScheduleRule& rule,
-                                                 const std::optional<Schedule>& first_instance) override {
+    Result<voicelife::schedule::CreatedScheduleRule> CreateWithFirstInstance(const ScheduleRule& rule,
+                                                                            const std::optional<Schedule>& first_instance) override {
         const auto created = Insert(rule);
-        if (!created.ok()) return created;
+        if (!created.ok()) {
+            return Result<voicelife::schedule::CreatedScheduleRule>::Failure(created.status.code, created.status.message);
+        }
+        std::optional<Schedule> saved_first;
         if (first_instance.has_value()) {
             Schedule instance = *first_instance;
             instance.rule_id = created.value->id;
             const auto saved = schedules_.Insert(instance);
-            if (!saved.ok()) return Result<ScheduleRule>::Failure(saved.status.code, saved.status.message);
+            if (!saved.ok()) {
+                return Result<voicelife::schedule::CreatedScheduleRule>::Failure(saved.status.code, saved.status.message);
+            }
+            saved_first = *saved.value;
         }
-        return created;
+        return Result<voicelife::schedule::CreatedScheduleRule>::Success(
+            {.rule = *created.value, .first_schedule = std::move(saved_first)});
     }
 
     Result<ScheduleRule> UpdateAndRebuild(const ScheduleRule& rule,

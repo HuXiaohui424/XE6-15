@@ -111,8 +111,16 @@ struct ToolResult {
 
     /** @brief 创建成功结果。 @param output 结构化输出。 @return 成功结果。 */
     static ToolResult Success(ToolOutputValue output) { return {Status::Ok(), std::move(output), std::nullopt}; }
-    /** @brief 创建失败结果。 @param status 失败状态。 @return 无输出的失败结果。 */
-    static ToolResult Failure(Status status) { return {std::move(status), ToolOutputValue::Null(), std::nullopt}; }
+    /** @brief 创建失败结果，并始终提供结构化的非空 message。 @param status 失败状态。 @return 失败结果。 */
+    static ToolResult Failure(Status status) {
+        std::string message = status.message;
+        if (message.empty()) message = "工具执行失败（" + std::string(ErrorCodeName(status.code)) + "）";
+        status.message = message;
+        return {std::move(status),
+                ToolOutputValue::Object({MakeToolOutput("status", ToolOutputValue::String("failure")),
+                                         MakeToolOutput("message", ToolOutputValue::String(std::move(message))) }),
+                std::nullopt};
+    }
 };
 
 }  // namespace voicelife

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <exception>
 #include <limits>
 #include <unordered_set>
 #include <utility>
@@ -458,8 +459,21 @@ ToolResult McpServer::call(const ToolCall& call) const {
         }
     }
 
-    // 执行业务回调并返回执行结果
-    return registered->second.handler(normalized_call);
+    // 执行业务回调并捕获所有异常；MCP 边界不允许异常逃逸，也不允许空 message。
+    try {
+        ToolResult result = registered->second.handler(normalized_call);
+        if (!result.status.ok() && result.status.message.empty()) {
+            result.status.message = "工具执行失败（" + std::string(ErrorCodeName(result.status.code)) + "）";
+        }
+        if (!result.status.ok() && (!result.output.IsObject() || result.output.object == nullptr)) {
+            return Failure(result.status);
+        }
+        return result;
+    } catch (const std::exception& exception) {
+        return Failure(Status::Error(ErrorCode::kInternal, "工具执行异常：" + std::string(exception.what())));
+    } catch (...) {
+        return Failure(Status::Error(ErrorCode::kInternal, "工具执行发生未知异常"));
+    }
 }
 
 }  // namespace voicelife::mcp

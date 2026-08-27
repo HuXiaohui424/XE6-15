@@ -24,7 +24,7 @@ CreateScheduleResult InvalidCreateScheduleResult(std::string error) {
     const Status status = Status::Error(ErrorCode::kInvalidArgument, error);
     return {
         .result = CommandResult<std::optional<Schedule>>::Failure(status),
-        .message = {},
+        .message = std::move(error),
         .conflicts = {},
         .nearby_schedules = {},
     };

@@ -14,6 +14,7 @@
 namespace voicelife::storage_sqlite {
 namespace {
 
+using schedule::CreatedScheduleRule;
 using schedule::DateTime;
 using schedule::Schedule;
 using schedule::ScheduleException;
@@ -145,37 +146,40 @@ Result<ScheduleRule> SqliteScheduleRuleRepository::FindById(schedule::ScheduleRu
     return mapping::ReadScheduleRule(statement);
 }
 
-Result<ScheduleRule> SqliteScheduleRuleRepository::CreateWithFirstInstance(
+Result<CreatedScheduleRule> SqliteScheduleRuleRepository::CreateWithFirstInstance(
     const ScheduleRule& rule, const std::optional<Schedule>& first_instance) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!database_.IsOpen()) return Result<ScheduleRule>::Failure(ErrorCode::kUnavailable, "SQLite 数据库尚未打开");
-    if (rule.event.empty()) return Result<ScheduleRule>::Failure(ErrorCode::kInvalidArgument, "规则名称不能为空");
+    if (!database_.IsOpen()) return Result<CreatedScheduleRule>::Failure(ErrorCode::kUnavailable, "SQLite 数据库尚未打开");
+    if (rule.event.empty()) return Result<CreatedScheduleRule>::Failure(ErrorCode::kInvalidArgument, "规则名称不能为空");
 
     const Status begin = database_.BeginTransaction();
-    if (!begin.ok()) return Result<ScheduleRule>::Failure(begin.code, begin.message);
+    if (!begin.ok()) return Result<CreatedScheduleRule>::Failure(begin.code, begin.message);
 
     const Result<ScheduleRule> inserted_rule = InsertRuleLocked(rule);
     if (!inserted_rule.ok()) {
         const Status failure = RollbackAfterFailure(database_, inserted_rule.status);
-        return Result<ScheduleRule>::Failure(failure.code, failure.message);
+        return Result<CreatedScheduleRule>::Failure(failure.code, failure.message);
     }
 
+    std::optional<Schedule> inserted_first;
     if (first_instance.has_value()) {
         Schedule schedule = *first_instance;
         schedule.rule_id = inserted_rule.value->id;
         const Result<Schedule> inserted = InsertScheduleLocked(schedule);
         if (!inserted.ok()) {
             const Status failure = RollbackAfterFailure(database_, inserted.status);
-            return Result<ScheduleRule>::Failure(failure.code, failure.message);
+            return Result<CreatedScheduleRule>::Failure(failure.code, failure.message);
         }
+        inserted_first = *inserted.value;
     }
 
     const Status committed = database_.Commit();
     if (!committed.ok()) {
         const Status failure = CombineRollbackFailure(committed, database_.Rollback());
-        return Result<ScheduleRule>::Failure(failure.code, failure.message);
+        return Result<CreatedScheduleRule>::Failure(failure.code, failure.message);
     }
-    return Result<ScheduleRule>::Success(*inserted_rule.value);
+    return Result<CreatedScheduleRule>::Success(
+        CreatedScheduleRule{.rule = *inserted_rule.value, .first_schedule = std::move(inserted_first)});
 }
 
 Result<ScheduleRule> SqliteScheduleRuleRepository::UpdateAndRebuild(const ScheduleRule& rule,

@@ -21,9 +21,9 @@ struct ScheduleRuleView {
 struct CreateScheduleRuleResult {
     Status status;
     std::optional<ScheduleRule> rule;
-    std::vector<Schedule> schedules;
+    std::optional<Schedule> first_schedule;
     std::vector<Schedule> conflicts;
-    std::string error;
+    std::string message;
 };
 
 /// 查询周期规则的返回数据。

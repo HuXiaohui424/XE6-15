@@ -104,8 +104,15 @@ std::string ToolOutcomeSummary(std::string_view request_payload, bool success) {
     const JsonValue* params = Get(request, "params");
     const JsonValue* name = params == nullptr ? nullptr : Get(*params, "name");
     if (name == nullptr || !name->IsString()) return success ? "操作已完成" : "操作失败";
-    if (name->string == "schedule.create") return success ? "日程已创建" : "日程创建失败";
+    if (name->string == "schedule.create") return success ? "一次性日程已创建" : "一次性日程创建失败";
+    if (name->string == "schedule.create_rule") return success ? "周期日程已创建" : "周期日程创建失败";
     if (name->string == "schedule.query") return success ? "日程查询完成" : "日程查询失败";
+    if (name->string == "schedule.update") return success ? "日程已修改" : "日程修改失败";
+    if (name->string == "schedule.update_occurrence") return success ? "未来 occurrence 已修改" : "未来 occurrence 修改失败";
+    if (name->string == "schedule.update_rule") return success ? "周期规则已修改" : "周期规则修改失败";
+    if (name->string == "schedule.delete") return success ? "日程已取消" : "日程取消失败";
+    if (name->string == "schedule.delete_rule") return success ? "周期规则已取消" : "周期规则取消失败";
+    if (name->string == "schedule.skip_occurrence") return success ? "未来 occurrence 已跳过" : "未来 occurrence 跳过失败";
     if (name->string == "im.binding.start") {
         return std::string(success ? kBindingToolHandledSummary : kBindingToolFailedSummary);
     }
@@ -216,9 +223,19 @@ Result<ToolValue> ToolValueFromJson(const JsonValue& value) {
  * @param result 已成功执行的工具结果。
  * @return 工具提供的精确文本，或由结构化输出序列化生成的 JSON 文本。
  */
+std::string NonEmptyMessage(std::string message, bool success) {
+    if (!message.empty()) return message;
+    return success ? "工具执行完成" : "工具执行失败";
+}
+
 std::string ResolveToolResultText(const ToolResult& result) {
-    if (result.text_output.has_value()) return *result.text_output;
-    return mcp::SerializeToolOutputValue(result.output);
+    if (result.text_output.has_value()) return NonEmptyMessage(*result.text_output, result.status.ok());
+    if (result.output.IsObject() && result.output.object != nullptr) {
+        for (const auto& [key, value] : *result.output.object) {
+            if (key == "message" && value != nullptr && value->IsString()) return NonEmptyMessage(value->string, result.status.ok());
+        }
+    }
+    return NonEmptyMessage(mcp::SerializeToolOutputValue(result.output), result.status.ok());
 }
 
 }  // namespace
