@@ -222,11 +222,30 @@ UpdateScheduleRuleResult ScheduleRuleService::update_schedule_rule(const UpdateS
         return FailedUpdateScheduleRuleResult(updated.status);
     }
 
-    // 返回数据：用更新后的规则 ID 关联新首条实例，供调用方看到本次重建结果。
+    // 事务提交后重新从 schedule 仓储读取首条实例，确保返回数据库实际生成的 schedule_id，
+    // 而不是把事务前生成的临时实体暴露给 MCP 调用方。
     std::vector<Schedule> schedules;
     if (first_instance.has_value()) {
-        first_instance->rule_id = rule.id;
-        schedules.push_back(*first_instance);
+        QueryScheduleCommand query;
+        query.rule_id = rule.id;
+        query.status = ScheduleStatusFilter::kAll;
+        query.start_from = first_time;
+        query.start_to = *first_time + std::chrono::seconds{1};
+        query.limit = 100;
+        query.offset = 0;
+        const Result<std::vector<Schedule>> rebuilt = schedule_repository_.Find(query);
+        if (!rebuilt.ok()) {
+            return FailedUpdateScheduleRuleResult(
+                Status::Error(rebuilt.status.code, "规则已更新，但读取重建实例失败：" + rebuilt.status.message),
+                std::move(conflicts));
+        }
+        if (rebuilt.value->empty()) {
+            return FailedUpdateScheduleRuleResult(
+                Status::Error(ErrorCode::kInternal, "规则已更新，但未找到实际重建的首条实例"), std::move(conflicts));
+        }
+        // 同一时间可能保留测试仓储或其他实现中的旧实例；按 ID 取最后写入的实例，
+        // SQLite 和内存实现都能因此返回本次事务实际生成的记录。
+        schedules.push_back(rebuilt.value->back());
     }
     return {.status = Status::Ok(),
             .rule = updated.value,

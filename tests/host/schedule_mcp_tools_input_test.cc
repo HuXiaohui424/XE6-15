@@ -103,10 +103,11 @@ int main() {
               update.monthly_mode == MonthlyMode::kSpecificDay && update.occurrence_count == 7,
           "UpdateRuleCommand 应把 repeat 字段写入更新命令");
 
-    Check(CreateProperties().to_schema().properties.contains("repeat"), "create 工具应声明 repeat 参数");
+    Check(!CreateProperties().to_schema().properties.contains("repeat"), "create 工具不应公开 repeat 参数");
     Check(QueryProperties().to_schema().properties.contains("keyword"), "query 工具应声明 keyword 参数");
-    Check(UpdateProperties().to_schema().properties.contains("repeat"), "update 工具应声明 repeat 参数");
-    Check(DeleteProperties().to_schema().properties.contains("rule_id"), "delete 工具应声明 rule_id 参数");
+    Check(!UpdateProperties().to_schema().properties.contains("repeat"), "update 工具不应公开 repeat 参数");
+    Check(DeleteProperties().to_schema().properties.contains("schedule_id"), "delete 工具应声明 schedule_id 参数");
+    Check(!DeleteProperties().to_schema().properties.contains("rule_id"), "delete 工具不应声明 rule_id 参数");
     Check(DeleteProperties().to_schema().properties.contains("expected_event"), "delete 工具应声明目标确认事件");
     Check(DeleteProperties().to_schema().properties.contains("expected_start_time"), "delete 工具应声明目标确认时间");
     return 0;

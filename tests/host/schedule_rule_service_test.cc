@@ -370,10 +370,10 @@ int main() {
         .end_date = std::nullopt,
         .occurrence_count = std::nullopt,
     });
-    Check(created.status.ok() && created.rule.has_value() && created.rule->id > 0 && created.schedules.size() == 1 &&
-              created.schedules.front().start_time.has_value() &&
-              created.schedules.front().start_time->time_since_epoch().count() == UtcAtLocal(2099, 1, 1, 9) &&
-              created.schedules.front().rule_id == created.rule->id,
+    Check(created.status.ok() && created.rule.has_value() && created.rule->id > 0 && created.first_schedule.has_value() &&
+              created.first_schedule->start_time.has_value() &&
+              created.first_schedule->start_time->time_since_epoch().count() == UtcAtLocal(2099, 1, 1, 9) &&
+              created.first_schedule->rule_id == created.rule->id,
           "创建周期规则必须物化首条实例并回写规则 ID");
 
     ScheduleException modify;

@@ -137,7 +137,11 @@ ParsedRepeat ParseFlat(const PropertyList& properties, bool require_anchor) {
 ParsedRepeat ParseRepeat(const std::optional<JsonValue>& repeat, bool require_anchor) {
     // 仅为旧的内部调用保留解析入口；公开工具不再声明 repeat 对象。
     if (!repeat.has_value()) return {};
-    if (!repeat->IsObject()) return ParsedRepeat{.error = "repeat 必须是对象；新工具请直接传入扁平周期字段"};
+    if (!repeat->IsObject()) {
+        ParsedRepeat parsed;
+        parsed.error = "repeat 必须是对象；新工具请直接传入扁平周期字段";
+        return parsed;
+    }
     PropertyList properties;
     for (const auto& [key, value] : repeat->object) {
         if (value.kind == JsonValue::Kind::kString) {
@@ -145,7 +149,9 @@ ParsedRepeat ParseRepeat(const std::optional<JsonValue>& repeat, bool require_an
         } else if (value.kind == JsonValue::Kind::kNumber && value.number == static_cast<int64_t>(value.number)) {
             properties.add_property(Property::Optional(key, PropertyType::kInteger));
         } else {
-            return ParsedRepeat{.error = "repeat." + key + " 类型无效；请使用公开工具的扁平参数"};
+            ParsedRepeat parsed;
+            parsed.error = "repeat." + key + " 类型无效；请使用公开工具的扁平参数";
+            return parsed;
         }
     }
     ToolArguments arguments;

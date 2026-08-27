@@ -229,10 +229,10 @@ void CheckRuleRepositoryBranches(const std::filesystem::path& path) {
           "空规则名 CreateWithFirstInstance 应被拒绝");
 
     const auto rule_no_first = repository.CreateWithFirstInstance(DailyRule(), std::nullopt);
-    Check(rule_no_first.ok() && rule_no_first.value->id > 0, "无首条实例的创建应成功");
-    const ScheduleRuleId rule_id = rule_no_first.value->id;
+    Check(rule_no_first.ok() && rule_no_first.value->rule.id > 0, "无首条实例的创建应成功");
+    const ScheduleRuleId rule_id = rule_no_first.value->rule.id;
 
-    ScheduleRule updated = *rule_no_first.value;
+    ScheduleRule updated = rule_no_first.value->rule;
     updated.event = "无实例更新";
     Check(repository.UpdateAndRebuild(updated, std::nullopt).ok(), "无首条实例的更新应成功");
 
@@ -242,7 +242,7 @@ void CheckRuleRepositoryBranches(const std::filesystem::path& path) {
     const auto insert_result = repository.Insert(inserted);
     Check(insert_result.ok() && insert_result.value->id > 0, "Insert 应成功插入规则");
 
-    ScheduleRule direct_update = *rule_no_first.value;
+    ScheduleRule direct_update = rule_no_first.value->rule;
     direct_update.event = "直接更新";
     Check(repository.Update(direct_update).ok(), "Update 应成功更新规则");
 
@@ -344,11 +344,11 @@ void CheckRuleRepositoryRollbackBranches(const std::filesystem::path& path) {
           "首条实例插入违反约束时应回滚并返回约束冲突");
 
     const auto created = repository.CreateWithFirstInstance(DailyRule(), std::nullopt);
-    Check(created.ok() && created.value->id > 0, "回滚分支测试应创建基准规则");
-    const ScheduleRuleId rule_id = created.value->id;
+    Check(created.ok() && created.value->rule.id > 0, "回滚分支测试应创建基准规则");
+    const ScheduleRuleId rule_id = created.value->rule.id;
 
     // 更新规则违反 CHECK 约束（事件过长）→ 事务回滚。
-    ScheduleRule too_long = *created.value;
+    ScheduleRule too_long = created.value->rule;
     too_long.event = std::string(101, 'x');
     Check(repository.UpdateAndRebuild(too_long, std::nullopt).status.code == ErrorCode::kAlreadyExists,
           "更新规则违反约束时应回滚并返回约束冲突");
@@ -360,7 +360,7 @@ void CheckRuleRepositoryRollbackBranches(const std::filesystem::path& path) {
           "更新不存在规则应回滚并返回未找到");
 
     // 更新重建时首条实例插入违反约束 → 事务回滚。
-    ScheduleRule valid_update = *created.value;
+    ScheduleRule valid_update = created.value->rule;
     valid_update.event = "更新实例失败";
     Schedule bad_rebuild_first = FirstInstance(rule_id);
     bad_rebuild_first.status = static_cast<ScheduleStatus>(99);
@@ -461,7 +461,7 @@ void CheckRuleRepositoryDeleteFailures() {
         Check(repository.Initialize().ok(), "删除日程失败分支应初始化表结构");
         const auto created = repository.CreateWithFirstInstance(DailyRule(), std::nullopt);
         Check(created.ok(), "应创建基准规则");
-        ScheduleRule update = *created.value;
+        ScheduleRule update = created.value->rule;
         update.event = "删除日程失败";
         Check(database.Execute("DROP TABLE schedule").ok(), "应删除日程表制造 DELETE 错误");
         Check(repository.UpdateAndRebuild(update, std::nullopt).status.code == ErrorCode::kInternal,
@@ -475,7 +475,7 @@ void CheckRuleRepositoryDeleteFailures() {
         Check(repository.Initialize().ok(), "删除例外失败分支应初始化表结构");
         const auto created = repository.CreateWithFirstInstance(DailyRule(), std::nullopt);
         Check(created.ok(), "应创建基准规则");
-        ScheduleRule update = *created.value;
+        ScheduleRule update = created.value->rule;
         update.event = "删除例外失败";
         Check(database.Execute("DROP TABLE schedule_rule_exception").ok(), "应删除例外表制造 DELETE 错误");
         Check(repository.UpdateAndRebuild(update, std::nullopt).status.code == ErrorCode::kInternal,
@@ -522,7 +522,7 @@ void CheckRuleRepositoryStepFailures() {
         Check(repository.Initialize().ok(), "更新规则执行失败分支应初始化表结构");
         const auto created = repository.CreateWithFirstInstance(DailyRule(), std::nullopt);
         Check(created.ok(), "更新规则执行失败分支应创建基准规则");
-        ScheduleRule update = *created.value;
+        ScheduleRule update = created.value->rule;
         update.event = "更新触发失败";
         Check(database.Execute(create_rule_update_trigger).ok(), "应创建规则更新拒绝触发器");
         Check(repository.Update(update).code == ErrorCode::kAlreadyExists, "Update 应透传更新规则执行错误");
@@ -548,7 +548,7 @@ void CheckRuleRepositoryStepFailures() {
         Check(repository.Initialize().ok(), "更新重建执行失败分支应初始化表结构");
         const auto created = repository.CreateWithFirstInstance(DailyRule(), std::nullopt);
         Check(created.ok(), "更新重建执行失败分支应创建基准规则");
-        ScheduleRule update = *created.value;
+        ScheduleRule update = created.value->rule;
         update.event = "更新重建触发失败";
         Check(database.Execute(create_rule_update_trigger).ok(), "应创建规则更新拒绝触发器");
         Check(repository.UpdateAndRebuild(update, std::nullopt).status.code == ErrorCode::kAlreadyExists,
@@ -564,7 +564,7 @@ void CheckRuleRepositoryStepFailures() {
         const auto created = repository.CreateWithFirstInstance(DailyRule(), std::nullopt);
         Check(created.ok(), "创建下一条实例执行失败分支应创建基准规则");
         Check(database.Execute(create_schedule_insert_trigger).ok(), "应创建日程插入拒绝触发器");
-        Check(repository.CreateNextInstance(FirstInstance(created.value->id), std::nullopt).status.code ==
+        Check(repository.CreateNextInstance(FirstInstance(created.value->rule.id), std::nullopt).status.code ==
                   ErrorCode::kAlreadyExists,
               "CreateNextInstance 应透传日程插入执行错误");
     }
@@ -579,7 +579,7 @@ void CheckRuleRepositoryStepFailures() {
         Check(created.ok(), "取消规则执行失败分支应创建基准规则");
         Check(database.Execute(create_rule_update_trigger).ok(), "应创建规则更新拒绝触发器");
         int64_t cancelled = 0;
-        Check(repository.CancelRuleAndInstances(created.value->id, cancelled).code == ErrorCode::kAlreadyExists,
+        Check(repository.CancelRuleAndInstances(created.value->rule.id, cancelled).code == ErrorCode::kAlreadyExists,
               "CancelRuleAndInstances 应透传取消规则执行错误");
     }
 
@@ -592,7 +592,7 @@ void CheckRuleRepositoryStepFailures() {
         const auto created = repository.CreateWithFirstInstance(DailyRule(), std::nullopt);
         Check(created.ok(), "例外 Upsert 执行失败分支应创建基准规则");
         Check(database.Execute(create_exception_insert_trigger).ok(), "应创建例外插入拒绝触发器");
-        Check(repository.Upsert(ModifyException(created.value->id)).status.code == ErrorCode::kAlreadyExists,
+        Check(repository.Upsert(ModifyException(created.value->rule.id)).status.code == ErrorCode::kAlreadyExists,
               "Upsert 应透传例外写入执行错误");
     }
 
@@ -604,9 +604,9 @@ void CheckRuleRepositoryStepFailures() {
         Check(repository.Initialize().ok(), "删除未来例外执行失败分支应初始化表结构");
         const auto created = repository.CreateWithFirstInstance(DailyRule(), std::nullopt);
         Check(created.ok(), "删除未来例外执行失败分支应创建基准规则");
-        Check(repository.Upsert(ModifyException(created.value->id)).ok(), "删除未来例外执行失败分支应写入例外");
+        Check(repository.Upsert(ModifyException(created.value->rule.id)).ok(), "删除未来例外执行失败分支应写入例外");
         Check(database.Execute(create_exception_delete_trigger).ok(), "应创建例外删除拒绝触发器");
-        Check(repository.DeleteFuture(created.value->id, DateTime{}).code == ErrorCode::kAlreadyExists,
+        Check(repository.DeleteFuture(created.value->rule.id, DateTime{}).code == ErrorCode::kAlreadyExists,
               "DeleteFuture 应透传删除未来例外执行错误");
     }
 
@@ -618,10 +618,10 @@ void CheckRuleRepositoryStepFailures() {
         Check(repository.Initialize().ok(), "取消清理例外执行失败分支应初始化表结构");
         const auto created = repository.CreateWithFirstInstance(DailyRule(), FirstInstance(0));
         Check(created.ok(), "取消清理例外执行失败分支应创建基准规则");
-        Check(repository.Upsert(ModifyException(created.value->id)).ok(), "取消清理例外执行失败分支应写入例外");
+        Check(repository.Upsert(ModifyException(created.value->rule.id)).ok(), "取消清理例外执行失败分支应写入例外");
         Check(database.Execute(create_exception_delete_trigger).ok(), "应创建例外删除拒绝触发器");
         int64_t cancelled = 0;
-        Check(repository.CancelRuleAndInstances(created.value->id, cancelled).code == ErrorCode::kAlreadyExists,
+        Check(repository.CancelRuleAndInstances(created.value->rule.id, cancelled).code == ErrorCode::kAlreadyExists,
               "CancelRuleAndInstances 应透传清理例外执行错误");
     }
 
@@ -641,7 +641,7 @@ void CheckRuleRepositoryStepFailures() {
                   .ok(),
               "应创建日程取消拒绝触发器");
         int64_t cancelled = 0;
-        Check(repository.CancelRuleAndInstances(created.value->id, cancelled).code == ErrorCode::kAlreadyExists,
+        Check(repository.CancelRuleAndInstances(created.value->rule.id, cancelled).code == ErrorCode::kAlreadyExists,
               "CancelRuleAndInstances 应透传取消实例执行错误");
     }
 
@@ -658,7 +658,7 @@ void CheckRuleRepositoryStepFailures() {
                            "BEGIN SELECT RAISE(ABORT, 'schedule delete blocked'); END")
                   .ok(),
               "应创建日程删除拒绝触发器");
-        ScheduleRule update = *created.value;
+        ScheduleRule update = created.value->rule;
         update.event = "删除未来日程触发失败";
         Check(repository.UpdateAndRebuild(update, std::nullopt).status.code == ErrorCode::kAlreadyExists,
               "UpdateAndRebuild 应透传删除未来日程执行错误");
@@ -672,13 +672,13 @@ void CheckRuleRepositoryStepFailures() {
         Check(repository.Initialize().ok(), "删除未来例外执行失败分支应初始化表结构");
         const auto created = repository.CreateWithFirstInstance(DailyRule(), std::nullopt);
         Check(created.ok(), "删除未来例外执行失败分支应创建基准规则");
-        Check(repository.Upsert(ModifyException(created.value->id)).ok(), "删除未来例外执行失败分支应写入例外");
+        Check(repository.Upsert(ModifyException(created.value->rule.id)).ok(), "删除未来例外执行失败分支应写入例外");
         Check(database
                   .Execute("CREATE TRIGGER reject_future_exception_delete BEFORE DELETE ON schedule_rule_exception "
                            "BEGIN SELECT RAISE(ABORT, 'future exception delete blocked'); END")
                   .ok(),
               "应创建未来例外删除拒绝触发器");
-        ScheduleRule update = *created.value;
+        ScheduleRule update = created.value->rule;
         update.event = "删除未来例外触发失败";
         Check(repository.UpdateAndRebuild(update, std::nullopt).status.code == ErrorCode::kAlreadyExists,
               "UpdateAndRebuild 应透传删除未来例外执行错误");
@@ -757,9 +757,10 @@ int main() {
     Check(repository.Initialize().ok(), "应成功创建周期规则表结构");
 
     const auto created = repository.CreateWithFirstInstance(DailyRule(), FirstInstance(0));
-    Check(created.ok() && created.value->id > 0 && created.value->created_at.time_since_epoch().count() != 0,
+    Check(created.ok() && created.value->rule.id > 0 &&
+              created.value->rule.created_at.time_since_epoch().count() != 0,
           "创建周期规则应返回数据库生成的 ID 和时间戳");
-    const ScheduleRuleId rule_id = created.value->id;
+    const ScheduleRuleId rule_id = created.value->rule.id;
 
     const auto loaded = repository.FindById(rule_id);
     const LocalDate expected_start = LocalDate{2099, 1, 1};
@@ -772,7 +773,7 @@ int main() {
     const auto all = repository.FindAll();
     Check(all.ok() && all.value->size() == 1 && all.value->front().id == rule_id, "读取全部规则应返回刚创建的规则");
 
-    ScheduleRule updated = *created.value;
+    ScheduleRule updated = created.value->rule;
     updated.event = "新每日例会";
     updated.notes = "更新后的备注";
     const auto rebuilt = repository.UpdateAndRebuild(updated, FirstInstance(rule_id));

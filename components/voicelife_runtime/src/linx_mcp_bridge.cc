@@ -104,7 +104,7 @@ std::string ToolOutcomeSummary(std::string_view request_payload, bool success) {
     const JsonValue* params = Get(request, "params");
     const JsonValue* name = params == nullptr ? nullptr : Get(*params, "name");
     if (name == nullptr || !name->IsString()) return success ? "操作已完成" : "操作失败";
-    if (name->string == "schedule.create") return success ? "一次性日程已创建" : "一次性日程创建失败";
+    if (name->string == "schedule.create") return success ? "日程已创建" : "日程创建失败";
     if (name->string == "schedule.create_rule") return success ? "周期日程已创建" : "周期日程创建失败";
     if (name->string == "schedule.query") return success ? "日程查询完成" : "日程查询失败";
     if (name->string == "schedule.update") return success ? "日程已修改" : "日程修改失败";
@@ -230,12 +230,15 @@ std::string NonEmptyMessage(std::string message, bool success) {
 
 std::string ResolveToolResultText(const ToolResult& result) {
     if (result.text_output.has_value()) return NonEmptyMessage(*result.text_output, result.status.ok());
+    const std::string serialized = mcp::SerializeToolOutputValue(result.output);
+    if (!serialized.empty() && serialized != "{}") return serialized;
     if (result.output.IsObject() && result.output.object != nullptr) {
         for (const auto& [key, value] : *result.output.object) {
-            if (key == "message" && value != nullptr && value->IsString()) return NonEmptyMessage(value->string, result.status.ok());
+            if (key == "message" && value != nullptr && value->IsString())
+                return NonEmptyMessage(value->string, result.status.ok());
         }
     }
-    return NonEmptyMessage(mcp::SerializeToolOutputValue(result.output), result.status.ok());
+    return NonEmptyMessage(serialized, result.status.ok());
 }
 
 }  // namespace

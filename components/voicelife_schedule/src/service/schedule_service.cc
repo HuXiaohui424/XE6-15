@@ -19,6 +19,10 @@ namespace {
 
 constexpr std::size_t kMaximumEventLength = 100;
 
+std::string FailureMessage(const Status& status, const char* fallback) {
+    return status.message.empty() ? fallback : status.message;
+}
+
 /**
  * @brief 在变更成功后追加一条操作日志（方案 A：尽力而为，失败不回滚变更）。
  * @param service 可空的操作记录服务。
@@ -81,7 +85,7 @@ CreateScheduleResult ScheduleService::create_schedule(const CreateScheduleComman
         if (!candidates.ok()) {
             return {
                 .result = CommandResult<std::optional<Schedule>>::Failure(candidates.status),
-                .message = {},
+                .message = FailureMessage(candidates.status, "读取日程候选失败"),
                 .conflicts = {},
                 .nearby_schedules = {},
             };
@@ -95,7 +99,7 @@ CreateScheduleResult ScheduleService::create_schedule(const CreateScheduleComman
         return {
             .result = CommandResult<std::optional<Schedule>>::Failure(
                 Status::Error(ErrorCode::kConflict, "日程时间与已有日程冲突")),
-            .message = {},
+            .message = "日程时间与已有日程冲突",
             .conflicts = std::move(conflicts),
             .nearby_schedules = std::move(nearby_schedules),
         };
@@ -106,7 +110,7 @@ CreateScheduleResult ScheduleService::create_schedule(const CreateScheduleComman
     if (!stored.ok()) {
         return {
             .result = CommandResult<std::optional<Schedule>>::Failure(stored.status),
-            .message = {},
+            .message = FailureMessage(stored.status, "保存日程失败"),
             .conflicts = std::move(conflicts),
             .nearby_schedules = std::move(nearby_schedules),
         };
@@ -179,7 +183,7 @@ UpdateScheduleResult ScheduleService::update_schedule(const UpdateScheduleComman
     if (!loaded.ok()) {
         return {
             .result = CommandResult<std::optional<Schedule>>::Failure(loaded.status),
-            .message = {},
+            .message = FailureMessage(loaded.status, "读取待修改日程失败"),
             .conflicts = {},
         };
     }
@@ -214,7 +218,7 @@ UpdateScheduleResult ScheduleService::update_schedule(const UpdateScheduleComman
         if (!candidates.ok()) {
             return {
                 .result = CommandResult<std::optional<Schedule>>::Failure(candidates.status),
-                .message = {},
+                .message = FailureMessage(candidates.status, "读取更新冲突候选失败"),
                 .conflicts = {},
             };
         }
@@ -224,7 +228,7 @@ UpdateScheduleResult ScheduleService::update_schedule(const UpdateScheduleComman
         const std::string error = "修改后的日程时间与已有日程冲突";
         return {
             .result = CommandResult<std::optional<Schedule>>::Failure(Status::Error(ErrorCode::kConflict, error)),
-            .message = {},
+            .message = error,
             .conflicts = std::move(conflicts),
         };
     }
@@ -235,7 +239,7 @@ UpdateScheduleResult ScheduleService::update_schedule(const UpdateScheduleComman
     if (!stored.ok()) {
         return {
             .result = CommandResult<std::optional<Schedule>>::Failure(stored),
-            .message = {},
+            .message = FailureMessage(stored, "保存日程失败"),
             .conflicts = std::move(conflicts),
         };
     }

@@ -460,6 +460,16 @@ ToolResult McpServer::call(const ToolCall& call) const {
     }
 
     // 执行业务回调并捕获所有异常；MCP 边界不允许异常逃逸，也不允许空 message。
+#if defined(ESP_PLATFORM)
+    ToolResult result = registered->second.handler(normalized_call);
+    if (!result.status.ok() && result.status.message.empty()) {
+        result.status.message = "工具执行失败（" + std::string(ErrorCodeName(result.status.code)) + "）";
+    }
+    if (!result.status.ok() && (!result.output.IsObject() || result.output.object == nullptr)) {
+        return Failure(result.status);
+    }
+    return result;
+#else
     try {
         ToolResult result = registered->second.handler(normalized_call);
         if (!result.status.ok() && result.status.message.empty()) {
@@ -474,6 +484,7 @@ ToolResult McpServer::call(const ToolCall& call) const {
     } catch (...) {
         return Failure(Status::Error(ErrorCode::kInternal, "工具执行发生未知异常"));
     }
+#endif
 }
 
 }  // namespace voicelife::mcp

@@ -63,6 +63,77 @@ ToolResult SummaryOutput(ToolOutputObject fields, std::string summary) {
     return result;
 }
 
+const ToolOutputValue* ObjectField(const ToolOutputValue& value, std::string_view key) {
+    if (!value.IsObject() || value.object == nullptr) return nullptr;
+    for (const auto& [field, item] : *value.object) {
+        if (field == key) return item.get();
+    }
+    return nullptr;
+}
+
+std::string StringField(const ToolOutputValue& value, std::string_view key) {
+    const ToolOutputValue* field = ObjectField(value, key);
+    return field != nullptr && field->IsString() ? field->string : std::string{};
+}
+
+std::string VoiceScheduleEntry(const ToolOutputValue& value, std::size_t index) {
+    std::string text = "第 " + std::to_string(index) + " 条：";
+    const std::string event = StringField(value, "event");
+    text += event.empty() ? "未命名日程" : event;
+    const std::string start = StringField(value, "start_time");
+    const std::string end = StringField(value, "end_time");
+    if (!start.empty()) {
+        text += "，时间 " + start;
+        if (!end.empty()) text += " 至 " + end;
+    }
+    const std::string location = StringField(value, "location");
+    if (!location.empty()) text += "，地点 " + location;
+    const std::string notes = StringField(value, "notes");
+    if (!notes.empty()) text += "，备注 " + notes;
+    return text;
+}
+
+std::string FullVoiceScheduleText(const ToolOutputArray& schedules, const ToolOutputArray& future_occurrences,
+                                  const ToolOutputArray& exceptions) {
+    const std::size_t count = schedules.size() + future_occurrences.size();
+    if (count == 0) return "没有查询到日程。";
+    std::string text = "查询到 " + std::to_string(count) + " 条日程。";
+    std::size_t index = 1;
+    for (const auto& item : schedules) {
+        if (item != nullptr) text += VoiceScheduleEntry(*item, index++) + "。";
+    }
+    for (const auto& item : future_occurrences) {
+        if (item != nullptr) text += VoiceScheduleEntry(*item, index++) + "。";
+    }
+    if (!exceptions.empty()) text += "另有 " + std::to_string(exceptions.size()) + " 项例外调整。";
+    return text;
+}
+
+std::optional<JsonValue> ParseOutputJson(const ToolOutputValue& output) {
+    JsonValue value;
+    JsonParseOptions options;
+    options.max_bytes = 128 * 1024;
+    options.max_nodes = 4096;
+    options.max_array_items = 128;
+    options.max_allocator_bytes = 512 * 1024;
+    if (!ParseJson(SerializeToolOutputValue(output), value, options).ok()) return std::nullopt;
+    return value;
+}
+
+std::string QueryNowIso() {
+    const auto now = std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::system_clock::now());
+    const std::time_t raw = std::chrono::system_clock::to_time_t(now);
+    std::tm utc{};
+#if defined(_WIN32)
+    gmtime_s(&utc, &raw);
+#else
+    gmtime_r(&raw, &utc);
+#endif
+    char buffer[32]{};
+    std::strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &utc);
+    return buffer;
+}
+
 ToolResult FailureOutput(std::string message) {
     return Output({
         MakeToolOutput("status", ToolOutputValue::String("failure")),
@@ -304,7 +375,8 @@ Status RegisterScheduleMcpTools(McpServer& server, ScheduleService& service, Sch
         });
     if (!status.ok()) return status;
 
-    status = server.add_tool(
+    if (rule_service != nullptr) {
+        status = server.add_tool(
         "schedule.create_rule",
         "创建周期性日程：在 schedule_rule 表创建周期规则，并在同一业务操作中生成首条 schedule 实例。周期字段必须直接作为顶层参数传入，不使用 repeat 对象；event、freq_type、start_date、start_time 必填，其余字段按参数描述决定。",
         CreateRuleProperties(), [rule_service, reminder_service](const PropertyList& properties) {
@@ -320,7 +392,7 @@ Status RegisterScheduleMcpTools(McpServer& server, ScheduleService& service, Sch
             if (!result.rule.has_value()) return FailureOutput("周期日程创建失败：服务未返回已保存的周期规则");
             const auto first = result.first_schedule;
             if (!first.has_value()) return FailureOutput("周期日程创建失败：服务未返回首条 schedule 实例");
-            if (const auto reminder = SynchronizeReminder(reminder_service, result.rule->id); reminder.has_value()) return *reminder;
+            if (const auto reminder = SynchronizeRule(reminder_service, result.rule->id); reminder.has_value()) return *reminder;
             const std::string message = "已创建周期日程“" + result.rule->event + "”，rule_id=" + std::to_string(result.rule->id) +
                                         "，首条日程 schedule_id=" + std::to_string(first->id);
             return Output({MakeToolOutput("status", ToolOutputValue::String("success")),
@@ -330,12 +402,13 @@ Status RegisterScheduleMcpTools(McpServer& server, ScheduleService& service, Sch
                            MakeToolOutput("conflicts", ToolOutputValue::Array(schedule_tool_output::ScheduleArrayOutput(result.conflicts))),
                            MakeToolOutput("warnings", ToolOutputValue::Array(ToolOutputArray{}))});
         });
-    if (!status.ok()) return status;
+        if (!status.ok()) return status;
+    }
 
     status = server.add_tool_with_context(
         "schedule.query",
         "统一查询一次性日程和周期日程。返回结果始终按 one_time_schedules、recurring_rules、recurring_schedules、future_occurrences、exceptions 分类；schedule_id 与 rule_id 互斥，具体使用方式见参数描述。",
-        QueryProperties(), [&service, rule_service](const ToolCall& call) {
+        QueryProperties(), [&service, rule_service, reporting_context](const ToolCall& call) {
             const PropertyList properties = QueryProperties().with_values(call.arguments);
             const auto start = ParseDateStart(properties);
             const auto end = ParseDateEnd(properties);
@@ -362,7 +435,7 @@ Status RegisterScheduleMcpTools(McpServer& server, ScheduleService& service, Sch
                 else one_time.emplace_back(MakeToolOutput(schedule_tool_output::ScheduleOutput(item)));
             }
             ToolOutputArray recurring_rules, future_occurrences, exceptions;
-            if (rule_service != nullptr) {
+            if (rule_service != nullptr && !schedule_id.has_value()) {
                 schedule::QueryScheduleRulesCommand rule_command;
                 rule_command.rule_id = rule_id;
                 rule_command.keyword = properties.value<std::string>("keyword");
@@ -375,20 +448,63 @@ Status RegisterScheduleMcpTools(McpServer& server, ScheduleService& service, Sch
                 for (const auto& view : rules.rules) {
                     recurring_rules.emplace_back(MakeToolOutput(schedule_tool_output::RuleOutput(view.rule)));
                     for (const auto& item : view.exceptions) {
-                        if (WithinRange(start, end, item.original_start_time)) exceptions.emplace_back(MakeToolOutput(schedule_tool_output::ExceptionOutput(item)));
+                        if (exceptions.size() < contracts::im::kMaxScheduleQueryItems &&
+                            WithinRange(start, end, item.original_start_time))
+                            exceptions.emplace_back(MakeToolOutput(schedule_tool_output::ExceptionOutput(item)));
                     }
                     for (const auto& item : view.upcoming_occurrences) {
-                        if (WithinRange(start, end, item)) future_occurrences.emplace_back(MakeToolOutput(schedule_tool_output::FutureOccurrenceOutput(view.rule, item)));
+                        if (future_occurrences.size() < contracts::im::kMaxScheduleQueryItems &&
+                            WithinRange(start, end, item))
+                            future_occurrences.emplace_back(MakeToolOutput(schedule_tool_output::FutureOccurrenceOutput(view.rule, item)));
                     }
                 }
             }
-            const int64_t result_count = static_cast<int64_t>(one_time.size() + recurring_schedules.size() + recurring_rules.size() + future_occurrences.size());
+            const int64_t result_count = static_cast<int64_t>(one_time.size() + recurring_schedules.size() + future_occurrences.size());
             const std::string keyword = properties.value<std::string>("keyword").value_or("");
             const std::string prefix = keyword.empty() ? "查询到" : "根据“" + keyword + "”关键字查询到";
             const std::string message = prefix + " " + std::to_string(one_time.size()) + " 条一次性日程、" +
                                         std::to_string(recurring_rules.size()) + " 条周期规则、" +
                                         std::to_string(recurring_schedules.size()) + " 条周期实例和 " +
                                         std::to_string(future_occurrences.size()) + " 条未来 occurrence";
+            const std::string voice_text = FullVoiceScheduleText(one_time, future_occurrences, exceptions);
+            const auto schedules_json = ParseOutputJson(ToolOutputValue::Array(one_time));
+            const auto future_json = ParseOutputJson(ToolOutputValue::Array(future_occurrences));
+            const auto exceptions_json = ParseOutputJson(ToolOutputValue::Array(exceptions));
+            if (!schedules_json.has_value() || !future_json.has_value() || !exceptions_json.has_value())
+                return FailureOutput("查询结果序列化失败");
+            if (reporting_context.runtime != nullptr && reporting_context.runtime->reporting_channel() != nullptr &&
+                !reporting_context.runtime->device_id().empty()) {
+                contracts::im::ScheduleQueryResultIntent intent;
+                intent.schemaVersion = "1";
+                intent.businessEventId = "schedule-query:" + call.request_id;
+                intent.correlationId = call.request_id;
+                intent.userId = reporting_context.runtime->user_id();
+                intent.deviceId = reporting_context.runtime->device_id();
+                intent.keyword = properties.value<std::string>("keyword");
+                intent.status = properties.value<std::string>("status").value_or("active");
+                intent.startDate = properties.value<std::string>("start_date");
+                intent.endDate = properties.value<std::string>("end_date");
+                intent.resultCount = result_count;
+                intent.schedules = *schedules_json;
+                intent.futureOccurrences = *future_json;
+                intent.exceptions = *exceptions_json;
+                intent.queriedAt = QueryNowIso();
+                const auto report = reporting_context.runtime->reporting_channel()->SubmitScheduleQueryResult(intent);
+                const char* report_state = report.status == voicelife::im::ReportStatus::kSubmitted ? "submitted" :
+                                           report.status == voicelife::im::ReportStatus::kRetryable ? "retryable_failed" : "failed";
+                return SummaryOutput({MakeToolOutput("status", ToolOutputValue::String("success")),
+                                      MakeToolOutput("message", ToolOutputValue::String(message)),
+                                      MakeToolOutput("result_count", ToolOutputValue::Integer(result_count)),
+                                      MakeToolOutput("one_time_schedules", ToolOutputValue::Array(std::move(one_time))),
+                                      MakeToolOutput("recurring_rules", ToolOutputValue::Array(std::move(recurring_rules))),
+                                      MakeToolOutput("recurring_schedules", ToolOutputValue::Array(std::move(recurring_schedules))),
+                                      MakeToolOutput("future_occurrences", ToolOutputValue::Array(std::move(future_occurrences))),
+                                      MakeToolOutput("exceptions", ToolOutputValue::Array(std::move(exceptions))),
+                                      MakeToolOutput("im_delivery", ToolOutputValue::String(report_state))},
+                                     report.status == voicelife::im::ReportStatus::kSubmitted
+                                         ? voice_text + "完整结果已通过 IM 提交。"
+                                         : voice_text + "IM 结果提交失败，可重试。");
+            }
             return SummaryOutput({MakeToolOutput("status", ToolOutputValue::String("success")),
                                   MakeToolOutput("message", ToolOutputValue::String(message)),
                                   MakeToolOutput("result_count", ToolOutputValue::Integer(result_count)),
@@ -397,7 +513,8 @@ Status RegisterScheduleMcpTools(McpServer& server, ScheduleService& service, Sch
                                   MakeToolOutput("recurring_schedules", ToolOutputValue::Array(std::move(recurring_schedules))),
                                   MakeToolOutput("future_occurrences", ToolOutputValue::Array(std::move(future_occurrences))),
                                   MakeToolOutput("exceptions", ToolOutputValue::Array(std::move(exceptions))),
-                                  MakeToolOutput("im_delivery", ToolOutputValue::Null())}, message);
+                                  MakeToolOutput("im_delivery", ToolOutputValue::Null())},
+                                 voice_text);
         });
     if (!status.ok()) return status;
 
@@ -423,7 +540,8 @@ Status RegisterScheduleMcpTools(McpServer& server, ScheduleService& service, Sch
         });
     if (!status.ok()) return status;
 
-    status = server.add_tool(
+    if (rule_service != nullptr) {
+        status = server.add_tool(
         "schedule.update_occurrence",
         "修改未来周期中的某一次尚未物化 occurrence。必须传 rule_id + original_start_time；这两个字段只用于定位周期规则中的某一天，不能用于一次性日程或已物化实例。已物化时请改用 schedule.update。至少传入一个覆盖字段。",
         UpdateOccurrenceProperties(), [rule_service](const PropertyList& properties) {
@@ -459,17 +577,25 @@ Status RegisterScheduleMcpTools(McpServer& server, ScheduleService& service, Sch
                            MakeToolOutput("conflicts", ToolOutputValue::Array(schedule_tool_output::ScheduleArrayOutput(result.conflicts))),
                            MakeToolOutput("warnings", ToolOutputValue::Array(ToolOutputArray{}))});
         });
-    if (!status.ok()) return status;
+        if (!status.ok()) return status;
+    }
 
-    status = server.add_tool(
+    if (rule_service != nullptr) {
+        status = server.add_tool(
         "schedule.update_rule",
         "修改整条周期规则并按新规则重建未来实例。必须只传 rule_id；不要传 schedule_id 或 original_start_time。除 rule_id 外至少传入一个规则字段。",
         UpdateRuleProperties(), [rule_service, reminder_service](const PropertyList& properties) {
             if (rule_service == nullptr) return FailureOutput("当前运行时未启用周期日程能力，无法修改规则");
             const ParsedRepeat parsed = ParseRuleProperties(properties, false);
             if (!parsed.ok()) return FailureOutput(parsed.error);
+            if (const auto suspended = SuspendRuleReminders(reminder_service, properties.value<int64_t>("rule_id").value_or(0)); suspended.has_value()) return *suspended;
             const auto result = rule_service->update_schedule_rule(UpdateRuleCommand(properties, parsed));
-            if (!result.status.ok()) return FailureOutput(result.status.message.empty() ? "周期规则修改失败" : result.status.message);
+            if (!result.status.ok()) {
+                const std::string message = result.status.message.empty() ? "周期规则修改失败" : result.status.message;
+                if (result.status.code == ErrorCode::kConflict)
+                    return ConflictOutput(message, schedule_tool_output::ScheduleArrayOutput(result.conflicts));
+                return FailureOutput(message);
+            }
             if (!result.rule.has_value()) return FailureOutput("周期规则修改失败：服务未返回已保存规则");
             if (const auto reminder = SynchronizeRule(reminder_service, result.rule->id); reminder.has_value()) return *reminder;
             return Output({MakeToolOutput("status", ToolOutputValue::String("success")),
@@ -479,7 +605,8 @@ Status RegisterScheduleMcpTools(McpServer& server, ScheduleService& service, Sch
                            MakeToolOutput("conflicts", ToolOutputValue::Array(schedule_tool_output::ScheduleArrayOutput(result.conflicts))),
                            MakeToolOutput("warnings", ToolOutputValue::Array(ToolOutputArray{}))});
         });
-    if (!status.ok()) return status;
+        if (!status.ok()) return status;
+    }
 
     status = server.add_tool(
         "schedule.delete",
@@ -505,7 +632,8 @@ Status RegisterScheduleMcpTools(McpServer& server, ScheduleService& service, Sch
         });
     if (!status.ok()) return status;
 
-    status = server.add_tool(
+    if (rule_service != nullptr) {
+        status = server.add_tool(
         "schedule.delete_rule",
         "取消整条周期规则及其已物化实例，并停止后续 occurrence 生成。必须只传 rule_id；不要传 schedule_id 或 original_start_time。",
         DeleteRuleProperties(), [rule_service, reminder_service](const PropertyList& properties) {
@@ -520,9 +648,11 @@ Status RegisterScheduleMcpTools(McpServer& server, ScheduleService& service, Sch
                            MakeToolOutput("cancelled_schedule_count", ToolOutputValue::Integer(result.cancelled_count)),
                            MakeToolOutput("warnings", ToolOutputValue::Array(ToolOutputArray{}))});
         });
-    if (!status.ok()) return status;
+        if (!status.ok()) return status;
+    }
 
-    status = server.add_tool(
+    if (rule_service != nullptr) {
+        status = server.add_tool(
         "schedule.skip_occurrence",
         "跳过未来周期中的某一次尚未物化 occurrence，实际写入 schedule_rule_exception，而不是删除周期规则。必须传 rule_id + original_start_time + expected_event；不要传 schedule_id。已物化时请改用 schedule.delete。",
         SkipOccurrenceProperties(), [rule_service](const PropertyList& properties) {
@@ -540,7 +670,8 @@ Status RegisterScheduleMcpTools(McpServer& server, ScheduleService& service, Sch
             }
             return FailureOutput("跳过 occurrence 未返回有效 exception");
         });
-    if (!status.ok()) return status;
+        if (!status.ok()) return status;
+    }
 
     // 操作记录与提醒交互工具保持独立；仅在装配相应服务时公开。
     if (operation_service == nullptr) return Status::Ok();
@@ -585,7 +716,7 @@ Status RegisterScheduleMcpTools(McpServer& server, ScheduleService& service, Sch
             ToolOutputArray events;
             for (const auto& action : *result.value) for (const auto& event : action.events) events.emplace_back(MakeToolOutput(ToolOutputValue::String(event)));
             const bool reported = ReportVoiceActionResults(*result.value, reporting_context);
-            return Output({MakeToolOutput("status", ToolOutputValue::String("success")), MakeToolOutput("message", ToolOutputValue::String("已确认 " + std::to_string(result.value->size()) + " 条提醒")), MakeToolOutput("affected_count", ToolOutputValue::Integer(static_cast<int64_t>(result.value->size()))), MakeToolOutput("events", ToolOutputValue::Array(std::move(events))), MakeToolOutput("im_delivery", ToolOutputValue::String(reported ? "submitted" : "retryable_failed"))});
+            return Output({MakeToolOutput("status", ToolOutputValue::String("success")), MakeToolOutput("message", ToolOutputValue::String("已确认提醒")), MakeToolOutput("affected_count", ToolOutputValue::Integer(static_cast<int64_t>(result.value->size()))), MakeToolOutput("events", ToolOutputValue::Array(std::move(events))), MakeToolOutput("im_delivery", ToolOutputValue::String(reported ? "submitted" : "retryable_failed"))});
         });
     if (!status.ok()) return status;
     return server.add_tool(
@@ -595,7 +726,7 @@ Status RegisterScheduleMcpTools(McpServer& server, ScheduleService& service, Sch
             const auto result = reminder_service->ExecuteRecentReminderActions(schedule::ScheduleReminderActionKind::kSnooze);
             if (!result.ok()) return FailureOutput(result.status.message.empty() ? "延迟提醒失败" : result.status.message);
             const bool reported = ReportVoiceActionResults(*result.value, reporting_context);
-            return Output({MakeToolOutput("status", ToolOutputValue::String("success")), MakeToolOutput("message", ToolOutputValue::String("已延迟 " + std::to_string(result.value->size()) + " 条提醒")), MakeToolOutput("affected_count", ToolOutputValue::Integer(static_cast<int64_t>(result.value->size()))), MakeToolOutput("im_delivery", ToolOutputValue::String(reported ? "submitted" : "retryable_failed"))});
+            return Output({MakeToolOutput("status", ToolOutputValue::String("success")), MakeToolOutput("message", ToolOutputValue::String("已延迟提醒")), MakeToolOutput("affected_count", ToolOutputValue::Integer(static_cast<int64_t>(result.value->size()))), MakeToolOutput("im_delivery", ToolOutputValue::String(reported ? "submitted" : "retryable_failed"))});
         });
 }
 

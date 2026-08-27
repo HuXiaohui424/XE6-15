@@ -232,8 +232,12 @@ Status RegisterScheduleRuleMcpTools(McpServer& server, schedule::ScheduleRuleSer
             if (!result.status.ok()) return Failure(result.status);
             ToolOutputObject fields;
             if (result.rule.has_value()) fields.emplace_back(MakeToolOutput("rule", RuleOutput(*result.rule)));
-            fields.emplace_back(MakeToolOutput(
-                "instances", ToolOutputValue::Array(schedule_tool_output::ScheduleArrayOutput(result.schedules))));
+            ToolOutputArray instances;
+            if (result.first_schedule.has_value()) {
+                instances.emplace_back(MakeToolOutput(schedule_tool_output::ScheduleOutput(
+                    *result.first_schedule, result.rule.has_value() ? &*result.rule : nullptr)));
+            }
+            fields.emplace_back(MakeToolOutput("instances", ToolOutputValue::Array(std::move(instances))));
             fields.emplace_back(MakeToolOutput(
                 "conflicts", ToolOutputValue::Array(schedule_tool_output::ScheduleArrayOutput(result.conflicts))));
             return ToolResult::Success(ToolOutputValue::Object(std::move(fields)));
